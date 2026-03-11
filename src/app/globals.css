@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smooth scroll untuk chat area */
+.chat-area {
+  scroll-behavior: smooth;
+}
+
+/* Animasi popup error */
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.error-popup {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* Custom scrollbar minimalis */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #e5e5e5;
+  border-radius: 3px;
+}
+
+/* Prose untuk markdown */
+.prose {
+  @apply text-sm leading-relaxed;
+}
+.prose pre {
+  @apply bg-[#f8f8f8] border border-[#e5e5e5] rounded-lg p-3 my-2;
+}
+.prose code {
+  @apply text-pink-600 bg-[#f8f8f8] px-1 rounded;
+}
