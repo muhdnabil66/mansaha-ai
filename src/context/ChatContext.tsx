@@ -19,13 +19,14 @@ type ChatContextType = {
   renameConversation: (id: string, newTitle: string) => void;
   deleteConversation: (id: string) => void;
   toggleStarConversation: (id: string) => void;
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
+  editMessage: (index: number, newContent: string) => Promise<void>;
+  redoMessage: (index: number) => Promise<void>;
+  deleteMessage: (index: number) => void;
   handleLike: (index: number) => void;
   handleDislike: (index: number) => void;
   copyToClipboard: (text: string) => void;
   setSelectedModel: (model: string) => void;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
 };
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -56,6 +57,22 @@ const dummyConversations: Conversation[] = [
   },
 ];
 
+interface StoredConversation {
+  id: string;
+  title: string;
+  messages: StoredMessage[];
+  createdAt: string;
+  starred?: boolean;
+}
+
+interface StoredMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  liked?: boolean;
+  disliked?: boolean;
+}
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] =
     useState<Conversation[]>(dummyConversations);
@@ -71,15 +88,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const toggleSidebar = () => setIsSidebarOpen((prev) => !prev);
   const closeSidebar = () => setIsSidebarOpen(false);
 
-  // Load conversations from localStorage
+  // Load from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("mansaha_conversations");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        const converted = parsed.map((conv: any) => ({
+        const parsed: StoredConversation[] = JSON.parse(saved);
+        const converted: Conversation[] = parsed.map((conv) => ({
           ...conv,
-          messages: conv.messages.map((msg: any) => ({
+          messages: conv.messages.map((msg) => ({
             ...msg,
             timestamp: new Date(msg.timestamp),
           })),
@@ -88,6 +105,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setConversations(converted);
         if (converted.length > 0) setCurrentConversationId(converted[0].id);
       } catch (e) {
+        console.error("Failed to parse conversations from localStorage", e);
         setConversations(dummyConversations);
         if (dummyConversations.length)
           setCurrentConversationId(dummyConversations[0].id);
@@ -99,7 +117,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Save conversations to localStorage
+  // Save to localStorage
   useEffect(() => {
     if (conversations.length) {
       localStorage.setItem(
@@ -119,6 +137,153 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentConversationId, conversations]);
 
+  const updateConversationMessages = (newMessages: Message[]) => {
+    if (!currentConversationId) return;
+    setConversations((prev) =>
+      prev.map((conv) =>
+        conv.id === currentConversationId
+          ? {
+              ...conv,
+              messages: newMessages,
+              title: getTitleFromMessages(newMessages),
+            }
+          : conv,
+      ),
+    );
+    setMessages(newMessages);
+  };
+
+  const getTitleFromMessages = (msgs: Message[]): string => {
+    if (msgs.length === 0) return "New Chat";
+    const firstUser = msgs.find((m) => m.role === "user");
+    if (firstUser && firstUser.content.length > 30) {
+      return firstUser.content.substring(0, 30) + "...";
+    }
+    return firstUser?.content || "New Chat";
+  };
+
+  // Helper to call API
+  const fetchAssistantResponse = async (
+    messagesToSend: Message[],
+  ): Promise<string | null> => {
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messagesToSend,
+          model: selectedModel,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        return data.reply;
+      } else {
+        setError(data.error || "Please try again");
+        return null;
+      }
+    } catch {
+      setError("Network error. Please try again.");
+      return null;
+    }
+  };
+
+  // Normal send (user types)
+  const sendMessage = async (content: string) => {
+    if (!content.trim()) return;
+
+    const userMessage: Message = {
+      role: "user",
+      content,
+      timestamp: new Date(),
+    };
+    const newMessages = [...messages, userMessage];
+    updateConversationMessages(newMessages);
+    setLoading(true);
+    setError(null);
+
+    const assistantReply = await fetchAssistantResponse(newMessages);
+    if (assistantReply) {
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: assistantReply,
+        timestamp: new Date(),
+      };
+      const finalMessages = [...newMessages, assistantMessage];
+      updateConversationMessages(finalMessages);
+    }
+    setLoading(false);
+  };
+
+  // Edit user message (replace and resend)
+  const editMessage = async (index: number, newContent: string) => {
+    if (index >= messages.length) return;
+    const msg = messages[index];
+    if (msg.role !== "user") return;
+
+    // Truncate up to this message and replace it
+    const truncated = messages.slice(0, index);
+    const editedUserMessage: Message = {
+      ...msg,
+      content: newContent,
+      timestamp: new Date(),
+    };
+    const newMessages = [...truncated, editedUserMessage];
+    updateConversationMessages(newMessages);
+    setLoading(true);
+    setError(null);
+
+    const assistantReply = await fetchAssistantResponse(newMessages);
+    if (assistantReply) {
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: assistantReply,
+        timestamp: new Date(),
+      };
+      const finalMessages = [...newMessages, assistantMessage];
+      updateConversationMessages(finalMessages);
+    }
+    setLoading(false);
+  };
+
+  // Regenerate (redo) assistant message
+  const redoMessage = async (assistantIndex: number) => {
+    if (assistantIndex >= messages.length) return;
+    const assistantMsg = messages[assistantIndex];
+    if (assistantMsg.role !== "assistant") return;
+
+    // Find preceding user message
+    let userIndex = assistantIndex - 1;
+    while (userIndex >= 0 && messages[userIndex].role !== "user") {
+      userIndex--;
+    }
+    if (userIndex < 0) return;
+
+    const userMsg = messages[userIndex];
+    const truncated = messages.slice(0, userIndex + 1);
+    updateConversationMessages(truncated);
+    setLoading(true);
+    setError(null);
+
+    const assistantReply = await fetchAssistantResponse(truncated);
+    if (assistantReply) {
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: assistantReply,
+        timestamp: new Date(),
+      };
+      const finalMessages = [...truncated, assistantMessage];
+      updateConversationMessages(finalMessages);
+    }
+    setLoading(false);
+  };
+
+  const deleteMessage = (index: number) => {
+    const updated = messages.filter((_, i) => i !== index);
+    updateConversationMessages(updated);
+  };
+
+  // Conversation management functions
   const createNewChat = () => {
     const newId = generateId();
     const newConv: Conversation = {
@@ -149,7 +314,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const deleteConversation = (id: string) => {
     setConversations((prev) => prev.filter((conv) => conv.id !== id));
     if (currentConversationId === id) {
-      // switch to first remaining or null
       const remaining = conversations.filter((conv) => conv.id !== id);
       setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
@@ -161,72 +325,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         conv.id === id ? { ...conv, starred: !conv.starred } : conv,
       ),
     );
-  };
-
-  const updateConversationMessages = (newMessages: Message[]) => {
-    if (!currentConversationId) return;
-    setConversations((prev) =>
-      prev.map((conv) =>
-        conv.id === currentConversationId
-          ? {
-              ...conv,
-              messages: newMessages,
-              title: getTitleFromMessages(newMessages),
-            }
-          : conv,
-      ),
-    );
-    setMessages(newMessages);
-  };
-
-  const getTitleFromMessages = (msgs: Message[]): string => {
-    if (msgs.length === 0) return "New Chat";
-    const firstUser = msgs.find((m) => m.role === "user");
-    if (firstUser && firstUser.content.length > 30) {
-      return firstUser.content.substring(0, 30) + "...";
-    }
-    return firstUser?.content || "New Chat";
-  };
-
-  const sendMessage = async (content: string) => {
-    if (!content.trim()) return;
-
-    const userMessage: Message = {
-      role: "user",
-      content,
-      timestamp: new Date(),
-    };
-    const newMessages = [...messages, userMessage];
-    updateConversationMessages(newMessages);
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: newMessages,
-          model: selectedModel,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const assistantMessage: Message = {
-          role: "assistant",
-          content: data.reply,
-          timestamp: new Date(),
-        };
-        const finalMessages = [...newMessages, assistantMessage];
-        updateConversationMessages(finalMessages);
-      } else {
-        setError(data.error || "Please try again");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleLike = (index: number) => {
@@ -271,13 +369,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         renameConversation,
         deleteConversation,
         toggleStarConversation,
-        setMessages,
-        setLoading,
-        setError,
+        editMessage,
+        redoMessage,
+        deleteMessage,
         handleLike,
         handleDislike,
         copyToClipboard,
         setSelectedModel,
+        setError,
       }}
     >
       {children}

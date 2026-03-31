@@ -9,10 +9,11 @@ import {
   Search,
   Settings,
   Crown,
-  User,
   X,
 } from "lucide-react";
 import KebabMenu from "./KebabMenu";
+import Image from "next/image";
+import ConfirmModal from "./ConfirmModal";
 
 export default function Sidebar() {
   const {
@@ -29,13 +30,16 @@ export default function Sidebar() {
   } = useChat();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSearchModal, setShowSearchModal] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
-  // Filter conversations based on search query
+  const showSearchModal = searchQuery.trim().length > 0;
+
   const filteredConversations = conversations.filter((conv) =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase()),
   );
@@ -56,15 +60,6 @@ export default function Sidebar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isSidebarOpen, closeSidebar]);
 
-  // Open search modal when typing
-  useEffect(() => {
-    if (searchQuery.trim().length > 0) {
-      setShowSearchModal(true);
-    } else {
-      setShowSearchModal(false);
-    }
-  }, [searchQuery]);
-
   const handleRename = (id: string, currentTitle: string) => {
     setRenameId(id);
     setRenameValue(currentTitle);
@@ -79,8 +74,13 @@ export default function Sidebar() {
   };
 
   const handleDelete = (id: string, title: string) => {
-    if (confirm(`Delete "${title}"? This action cannot be undone.`)) {
-      deleteConversation(id);
+    setDeleteConfirm({ id, title });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      deleteConversation(deleteConfirm.id);
+      setDeleteConfirm(null);
     }
   };
 
@@ -90,7 +90,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Toggle button when sidebar is closed */}
       {!isSidebarOpen && (
         <button
           onClick={toggleSidebar}
@@ -101,7 +100,6 @@ export default function Sidebar() {
         </button>
       )}
 
-      {/* Sidebar */}
       <aside
         ref={sidebarRef}
         className={`
@@ -113,12 +111,14 @@ export default function Sidebar() {
       >
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img
+            <Image
               src="/mansaha.png"
               alt="Mansaha"
-              className="w-6 h-6 object-contain"
+              width={24}
+              height={24}
+              className="object-contain"
             />
-            <h1 className="font-semibold text-lg">Claude</h1>
+            <h1 className="font-semibold text-lg">Mansaha Rozza</h1>
           </div>
           <button
             onClick={toggleSidebar}
@@ -144,7 +144,6 @@ export default function Sidebar() {
               size={16}
             />
             <input
-              ref={searchInputRef}
               type="text"
               placeholder="Search"
               value={searchQuery}
@@ -196,12 +195,7 @@ export default function Sidebar() {
                 >
                   {conv.title}
                 </button>
-                <div
-                  className={`
-                    ${window.innerWidth >= 1024 ? "opacity-0 group-hover:opacity-100" : "opacity-100"}
-                    transition-opacity
-                  `}
-                >
+                <div className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                   <KebabMenu
                     onStar={() => handleStar(conv.id)}
                     onRename={() => handleRename(conv.id, conv.title)}
@@ -235,10 +229,7 @@ export default function Sidebar() {
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h3 className="font-medium">Search conversations</h3>
               <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setShowSearchModal(false);
-                }}
+                onClick={() => setSearchQuery("")}
                 className="p-1 hover:bg-gray-100 rounded-full"
               >
                 <X size={18} />
@@ -257,7 +248,6 @@ export default function Sidebar() {
                       onClick={() => {
                         switchConversation(conv.id);
                         setSearchQuery("");
-                        setShowSearchModal(false);
                         if (window.innerWidth < 1024) closeSidebar();
                       }}
                       className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 transition"
@@ -272,7 +262,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Rename modal */}
+      {/* Rename Modal */}
       {renameId && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
@@ -308,6 +298,15 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        title="Delete conversation"
+        message={`Are you sure you want to delete "${deleteConfirm?.title}"? This action cannot be undone.`}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </>
   );
 }
