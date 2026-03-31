@@ -18,7 +18,7 @@ export async function POST(req: Request) {
           "X-Title": "Mansaha AI",
         },
         body: JSON.stringify({
-          model: "openrouter/free", // Router auto pilih model free
+          model: "qwen/qwen3.6-plus-preview:free", // Router auto pilih model free
           messages: messages,
           temperature: 0.7,
         }),
