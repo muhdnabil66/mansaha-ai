@@ -118,7 +118,7 @@ export default function Sidebar() {
               height={24}
               className="object-contain"
             />
-            <h1 className="font-semibold text-lg">Mansaha Rozza</h1>
+            <h1 className="font-semibold text-lg">Mansaha HeruX</h1>
           </div>
           <button
             onClick={toggleSidebar}

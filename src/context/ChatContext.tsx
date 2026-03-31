@@ -88,7 +88,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const toggleSidebar = () => setIsSidebarOpen((prev) => !prev);
   const closeSidebar = () => setIsSidebarOpen(false);
 
-  // Load from localStorage
+  // Load conversations from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("mansaha_conversations");
     if (saved) {
@@ -102,6 +102,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           })),
           createdAt: new Date(conv.createdAt),
         }));
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setConversations(converted);
         if (converted.length > 0) setCurrentConversationId(converted[0].id);
       } catch (e) {
@@ -131,8 +132,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (currentConversationId) {
       const conv = conversations.find((c) => c.id === currentConversationId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages(conv?.messages || []);
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages([]);
     }
   }, [currentConversationId, conversations]);
@@ -162,7 +165,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return firstUser?.content || "New Chat";
   };
 
-  // Helper to call API
   const fetchAssistantResponse = async (
     messagesToSend: Message[],
   ): Promise<string | null> => {
@@ -188,7 +190,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Normal send (user types)
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
@@ -215,13 +216,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   };
 
-  // Edit user message (replace and resend)
   const editMessage = async (index: number, newContent: string) => {
     if (index >= messages.length) return;
     const msg = messages[index];
     if (msg.role !== "user") return;
 
-    // Truncate up to this message and replace it
     const truncated = messages.slice(0, index);
     const editedUserMessage: Message = {
       ...msg,
@@ -246,20 +245,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   };
 
-  // Regenerate (redo) assistant message
   const redoMessage = async (assistantIndex: number) => {
     if (assistantIndex >= messages.length) return;
     const assistantMsg = messages[assistantIndex];
     if (assistantMsg.role !== "assistant") return;
 
-    // Find preceding user message
     let userIndex = assistantIndex - 1;
     while (userIndex >= 0 && messages[userIndex].role !== "user") {
       userIndex--;
     }
     if (userIndex < 0) return;
 
-    const userMsg = messages[userIndex];
     const truncated = messages.slice(0, userIndex + 1);
     updateConversationMessages(truncated);
     setLoading(true);
@@ -283,7 +279,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     updateConversationMessages(updated);
   };
 
-  // Conversation management functions
   const createNewChat = () => {
     const newId = generateId();
     const newConv: Conversation = {

@@ -38,17 +38,17 @@ export default function MessageList({
     content: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState<{
-    index: number;
-    role: string;
-  } | null>(null);
   const [loadingPhase, setLoadingPhase] = useState<"thinking" | "wave">(
     "thinking",
   );
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    index: number;
+    content: string;
+  } | null>(null);
 
-  // Sequential loading indicator
   useEffect(() => {
     if (loading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoadingPhase("thinking");
       const timer = setTimeout(() => setLoadingPhase("wave"), 1000);
       return () => clearTimeout(timer);
@@ -86,8 +86,8 @@ export default function MessageList({
     redoMessage(index);
   };
 
-  const handleDeleteClick = (index: number, role: string) => {
-    setDeleteConfirm({ index, role });
+  const handleDelete = (index: number) => {
+    setDeleteConfirm({ index, content: messages[index].content });
   };
 
   const confirmDelete = () => {
@@ -124,7 +124,6 @@ export default function MessageList({
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div className="max-w-[85%] md:max-w-[75%]">
-              {/* Bubble content */}
               <div
                 className={`rounded-2xl px-4 py-3 text-sm ${
                   msg.role === "user"
@@ -153,7 +152,6 @@ export default function MessageList({
                 )}
               </div>
 
-              {/* Actions row below bubble */}
               <div className="flex items-center gap-1 mt-1 justify-end">
                 <button
                   onClick={() => handleCopyWithFeedback(msg.content, idx)}
@@ -207,7 +205,7 @@ export default function MessageList({
                 )}
 
                 <button
-                  onClick={() => handleDeleteClick(idx, msg.role)}
+                  onClick={() => handleDelete(idx)}
                   className="p-1 rounded-md hover:bg-gray-100 transition text-red-500"
                   title="Delete"
                 >
@@ -218,7 +216,6 @@ export default function MessageList({
           </div>
         ))}
 
-        {/* Loading indicator */}
         {loading && (
           <div className="flex justify-start">
             <div className="bg-gray-50 rounded-2xl px-4 py-3">
@@ -285,11 +282,8 @@ export default function MessageList({
         isOpen={!!deleteConfirm}
         title="Delete message"
         message="Are you sure you want to delete this message? This action cannot be undone."
-        confirmText="Delete"
-        cancelText="Cancel"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm(null)}
-        isDestructive={true}
       />
     </>
   );

@@ -1,9 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useState, useRef, useLayoutEffect, useEffect } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { MoreVertical, Star, Edit2, Trash2 } from "lucide-react";
+import Portal from "./Portal";
 
 interface KebabMenuProps {
   onStar: () => void;
@@ -19,64 +19,62 @@ export default function KebabMenu({
   isStarred,
 }: KebabMenuProps) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({
-    top: 0,
-    left: 0,
-    direction: "bottom",
-  });
+  const [position, setPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const updatePosition = () => {
-    if (!buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const dropdownHeight = dropdownRef.current?.offsetHeight || 150;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const shouldShowAbove =
-      spaceBelow < dropdownHeight && spaceAbove > dropdownHeight;
-    const top = shouldShowAbove
-      ? rect.top - dropdownHeight - 4
-      : rect.bottom + 4;
-    const left = rect.right - 144; // assuming width 144px
-    setPosition({
-      top,
-      left,
-      direction: shouldShowAbove ? "top" : "bottom",
-    });
-  };
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current || !menuRef.current) return;
+    const buttonRect = buttonRef.current.getBoundingClientRect();
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - buttonRect.bottom;
+    const spaceAbove = buttonRect.top;
+    let top: number;
+    if (spaceBelow < menuRect.height && spaceAbove > menuRect.height) {
+      top = buttonRect.top - menuRect.height - 4;
+    } else {
+      top = buttonRect.bottom + 4;
+    }
+    let left = buttonRect.right - menuRect.width;
+    if (left < 8) left = 8;
+    if (left + menuRect.width > window.innerWidth - 8)
+      left = window.innerWidth - menuRect.width - 8;
+    setPosition({ top, left });
+  }, []);
 
-  // Close on click outside
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => {
+        updatePosition();
+        window.addEventListener("scroll", updatePosition, true);
+        window.addEventListener("resize", updatePosition);
+        return () => {
+          window.removeEventListener("scroll", updatePosition, true);
+          window.removeEventListener("resize", updatePosition);
+        };
+      });
+    } else {
+      setPosition(null);
+    }
+  }, [open, updatePosition]);
+
+  useLayoutEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         buttonRef.current &&
         !buttonRef.current.contains(event.target as Node) &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
+        menuRef.current &&
+        !menuRef.current.contains(event.target as Node)
       ) {
         setOpen(false);
       }
     };
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
-
-  // Update position when open changes or scroll/resize
-  useLayoutEffect(() => {
-    if (open) {
-      updatePosition();
-      const handleResize = () => updatePosition();
-      window.addEventListener("resize", handleResize);
-      window.addEventListener("scroll", handleResize, true);
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        window.removeEventListener("scroll", handleResize, true);
-      };
-    }
-  }, [open]);
+  }, []);
 
   const handleAction = (action: () => void) => {
     action();
@@ -84,7 +82,7 @@ export default function KebabMenu({
   };
 
   return (
-    <div className="relative inline-block">
+    <>
       <button
         ref={buttonRef}
         onClick={() => setOpen(!open)}
@@ -92,10 +90,10 @@ export default function KebabMenu({
       >
         <MoreVertical size={14} />
       </button>
-      {open &&
-        createPortal(
+      {open && position && (
+        <Portal>
           <div
-            ref={dropdownRef}
+            ref={menuRef}
             className="fixed bg-white border border-gray-200 rounded-md shadow-lg z-[100] w-36"
             style={{ top: position.top, left: position.left }}
           >
@@ -123,9 +121,9 @@ export default function KebabMenu({
               <Trash2 size={14} />
               <span>Delete</span>
             </button>
-          </div>,
-          document.body,
-        )}
-    </div>
+          </div>
+        </Portal>
+      )}
+    </>
   );
 }
