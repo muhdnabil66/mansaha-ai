@@ -26,7 +26,6 @@ export default function CodeView() {
   useEffect(() => {
     const loadSnippets = async () => {
       if (!isSignedIn) {
-        // For demo, show empty state
         setSnippets([]);
         setLoading(false);
         return;
@@ -40,7 +39,7 @@ export default function CodeView() {
         setLoading(false);
         return;
       }
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("artifacts")
         .select("*")
         .eq("user_id", userData.id)

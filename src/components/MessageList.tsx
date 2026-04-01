@@ -2,6 +2,7 @@
 
 import { Message } from "@/types";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Copy,
   Check,
@@ -33,6 +34,7 @@ export default function MessageList({
     editMessage,
     redoMessage,
     deleteMessage,
+    isStreaming,
   } = useChat();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -162,137 +164,141 @@ export default function MessageList({
     );
   }
 
+  // Filter out placeholder messages that are still loading and have empty content
+  const visibleMessages = messages.filter((msg, idx) => {
+    if (
+      isStreaming &&
+      msg.role === "assistant" &&
+      msg.content === "" &&
+      idx === messages.length - 1
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const showSpinThinking = loading && !isStreaming;
+  const showThreeDots =
+    isStreaming &&
+    messages.length > 0 &&
+    messages[messages.length - 1]?.role === "assistant" &&
+    messages[messages.length - 1]?.content === "";
+
   return (
     <>
       <div className="space-y-6">
-        {messages.map((msg, idx) => {
-          // Skip rendering placeholder messages that are still loading and have empty content
-          if (
-            loading &&
-            msg.role === "assistant" &&
-            msg.content === "" &&
-            idx === messages.length - 1
-          ) {
-            return null;
-          }
-          return (
-            <div
-              key={idx}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div className="max-w-[85%] md:max-w-[75%]">
-                <div
-                  className={`rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-gray-100" : "bg-gray-50 border border-gray-100"}`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium opacity-70">
-                      {msg.role === "user" ? "You" : "Mansaha"}
-                    </span>
-                    <span className="text-[10px] opacity-50">
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  ) : (
-                    <div className="prose prose-sm max-w-none">
-                      <ReactMarkdown
-                        components={{
-                          code({
-                            node,
-                            inline,
-                            className,
-                            children,
-                            ...props
-                          }) {
-                            const match = /language-(\w+)/.exec(
-                              className || "",
-                            );
-                            return !inline && match ? (
+        {visibleMessages.map((msg, idx) => (
+          <div
+            key={idx}
+            className={`group flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            <div className="max-w-[85%] md:max-w-[75%]">
+              <div className="px-4 py-3 text-base">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-medium opacity-70">
+                    {msg.role === "user" ? "You" : "Mansaha"}
+                  </span>
+                  <span className="text-[10px] opacity-50">
+                    {new Date(msg.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                {msg.role === "user" ? (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ className, children, ...props }) {
+                          const match = /language-(\w+)/.exec(className || "");
+                          const isInline = !match;
+                          if (!isInline && match) {
+                            return (
                               <CodeBlock
                                 language={match[1]}
                                 value={String(children).replace(/\n$/, "")}
                               />
-                            ) : (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
                             );
-                          },
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
+                          }
+                          return (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          );
+                        },
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-1 mt-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                <button
+                  onClick={() => handleCopyWithFeedback(msg.content, idx)}
+                  className="p-1 rounded-md hover:bg-gray-100 transition"
+                  title="Copy"
+                >
+                  {copiedIndex === idx ? (
+                    <Check size={14} className="text-green-500" />
+                  ) : (
+                    <Copy size={14} />
                   )}
-                </div>
-                <div className="flex items-center gap-1 mt-1 justify-end">
+                </button>
+                {msg.role === "user" && (
                   <button
-                    onClick={() => handleCopyWithFeedback(msg.content, idx)}
+                    onClick={() => openEditModal(idx, msg.content)}
                     className="p-1 rounded-md hover:bg-gray-100 transition"
-                    title="Copy"
+                    title="Edit"
                   >
-                    {copiedIndex === idx ? (
-                      <Check size={14} className="text-green-500" />
-                    ) : (
-                      <Copy size={14} />
-                    )}
+                    <Edit2 size={14} />
                   </button>
-                  {msg.role === "user" && (
-                    <button
-                      onClick={() => openEditModal(idx, msg.content)}
-                      className="p-1 rounded-md hover:bg-gray-100 transition"
-                      title="Edit"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                  )}
-                  {msg.role === "assistant" && (
-                    <button
-                      onClick={() => redoMessage(idx)}
-                      className="p-1 rounded-md hover:bg-gray-100 transition"
-                      title="Regenerate"
-                    >
-                      <Repeat size={14} />
-                    </button>
-                  )}
-                  {msg.role === "assistant" && (
-                    <>
-                      <button
-                        onClick={() => handleLike(idx)}
-                        className={`p-1 rounded-md transition ${msg.liked ? "text-green-500" : "hover:bg-gray-100"}`}
-                        title="Like"
-                      >
-                        <ThumbsUp size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDislike(idx)}
-                        className={`p-1 rounded-md transition ${msg.disliked ? "text-red-500" : "hover:bg-gray-100"}`}
-                        title="Dislike"
-                      >
-                        <ThumbsDown size={14} />
-                      </button>
-                    </>
-                  )}
+                )}
+                {msg.role === "assistant" && (
                   <button
-                    onClick={() => handleDelete(idx)}
-                    className="p-1 rounded-md hover:bg-gray-100 transition text-red-500"
-                    title="Delete"
+                    onClick={() => redoMessage(idx)}
+                    className="p-1 rounded-md hover:bg-gray-100 transition"
+                    title="Regenerate"
                   >
-                    <Trash2 size={14} />
+                    <Repeat size={14} />
                   </button>
-                </div>
+                )}
+                {msg.role === "assistant" && (
+                  <>
+                    <button
+                      onClick={() => handleLike(idx)}
+                      className={`p-1 rounded-md transition ${msg.liked ? "text-green-500" : "hover:bg-gray-100"}`}
+                      title="Like"
+                    >
+                      <ThumbsUp size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDislike(idx)}
+                      className={`p-1 rounded-md transition ${msg.disliked ? "text-red-500" : "hover:bg-gray-100"}`}
+                      title="Dislike"
+                    >
+                      <ThumbsDown size={14} />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => handleDelete(idx)}
+                  className="p-1 rounded-md hover:bg-gray-100 transition text-red-500"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
 
-        {loading && (
+        {showSpinThinking && (
           <div className="flex justify-start">
-            <div className="bg-gray-50 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <div className="flex items-center gap-3 px-4 py-3">
               <div className="relative w-5 h-5 animate-spin">
                 <Image
                   src="/mansaha.png"
@@ -302,6 +308,18 @@ export default function MessageList({
                 />
               </div>
               <span className="text-sm text-gray-500">Thinking...</span>
+            </div>
+          </div>
+        )}
+
+        {showThreeDots && (
+          <div className="flex justify-start">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0s]"></div>
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+              </div>
             </div>
           </div>
         )}

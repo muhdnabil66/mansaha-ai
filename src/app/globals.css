@@ -2,28 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Smooth scroll untuk chat area */
-.chat-area {
-  scroll-behavior: smooth;
+/* Hide scrollbar for Chrome, Safari and Opera */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
-/* Animasi popup error */
-@keyframes slideDown {
-  from {
-    transform: translateY(-100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+/* Hide scrollbar for IE, Edge and Firefox */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
-.error-popup {
-  animation: slideDown 0.3s ease-out;
-}
-
-/* Custom scrollbar minimalis */
+/* Custom scrollbar minimalis (if needed) */
 ::-webkit-scrollbar {
   width: 6px;
 }

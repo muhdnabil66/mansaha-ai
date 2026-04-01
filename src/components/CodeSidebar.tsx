@@ -2,6 +2,7 @@
 
 import { X, Download, Copy } from "lucide-react";
 import { useState } from "react";
+import { useChat } from "@/context/ChatContext";
 
 interface CodeSidebarProps {
   code: string;
@@ -15,6 +16,7 @@ export default function CodeSidebar({
   onClose,
 }: CodeSidebarProps) {
   const [copied, setCopied] = useState(false);
+  const { isSidebarOpen } = useChat();
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
@@ -32,8 +34,19 @@ export default function CodeSidebar({
     URL.revokeObjectURL(url);
   };
 
+  // Adjust width based on sidebar state
+  const sidebarWidth = isSidebarOpen ? 320 : 0; // 20rem = 320px
+  const rightOffset = sidebarWidth;
+
   return (
-    <div className="fixed top-0 right-0 w-full md:w-96 h-full bg-white border-l border-gray-200 shadow-xl z-50 flex flex-col">
+    <div
+      className="fixed top-0 right-0 h-full bg-white border-l border-gray-200 shadow-xl z-50 flex flex-col"
+      style={{
+        width: "50%",
+        right: rightOffset,
+        maxWidth: "calc(100% - 20rem)",
+      }}
+    >
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <h3 className="font-medium">Code Preview</h3>
         <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useChat } from "@/context/ChatContext";
 import ModelSelector from "./ModelSelector";
 import {
@@ -11,12 +11,15 @@ import {
   FolderPlus,
   X,
   Image as ImageIcon,
+  Square,
+  RotateCcw,
 } from "lucide-react";
 import Image from "next/image";
 
 export default function InputArea() {
   const [input, setInput] = useState("");
   const [plusOpen, setPlusOpen] = useState(false);
+  const [showRetryButton, setShowRetryButton] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     sendMessage,
@@ -25,17 +28,35 @@ export default function InputArea() {
     addAttachment,
     removeAttachment,
     chatLimitMessage,
+    stopGeneration,
+    retryLastMessage,
+    isStreaming,
   } = useChat();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const lastUserMessage = localStorage.getItem("last_user_message");
+      setShowRetryButton(!!lastUserMessage && !loading && !isStreaming);
+    }
+  }, [loading, isStreaming]);
 
   const handleSend = () => {
     if ((input.trim() || attachments.length > 0) && !loading) {
       sendMessage(input);
       setInput("");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("last_user_message");
+        setShowRetryButton(false);
+      }
     }
   };
 
+  const handleStop = () => {
+    stopGeneration();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !loading) {
       e.preventDefault();
       handleSend();
     }
@@ -47,11 +68,32 @@ export default function InputArea() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleLimitClick = () => {
+    window.dispatchEvent(new CustomEvent("openPlanSelector"));
+  };
+
+  const handleRetry = () => {
+    retryLastMessage();
+    setShowRetryButton(false);
+  };
+
   return (
     <div className="relative w-full">
       {chatLimitMessage && (
-        <div className="mb-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
-          {chatLimitMessage}
+        <div className="mb-3 text-sm text-red-700 bg-red-100 rounded-xl px-4 py-3 font-medium shadow-sm border border-red-200">
+          {chatLimitMessage.split("Upgrade").map((part, i) => (
+            <span key={i}>
+              {part}
+              {i === 0 && (
+                <button
+                  onClick={handleLimitClick}
+                  className="underline font-bold ml-1 text-red-800 hover:text-red-900"
+                >
+                  Upgrade
+                </button>
+              )}
+            </span>
+          ))}
         </div>
       )}
 
@@ -153,16 +195,39 @@ export default function InputArea() {
 
           <div className="flex items-center gap-2">
             <ModelSelector />
-            <button
-              onClick={handleSend}
-              disabled={loading || (!input.trim() && attachments.length === 0)}
-              className="w-7 h-7 rounded-full bg-black text-white disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all hover:scale-105"
-            >
-              ↑
-            </button>
+            {loading ? (
+              <button
+                onClick={handleStop}
+                className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center transition-all hover:scale-105"
+                title="Stop generating"
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() && attachments.length === 0}
+                className="w-7 h-7 rounded-full bg-black text-white disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all hover:scale-105"
+              >
+                ↑
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {showRetryButton && (
+        <div className="mt-2 flex justify-end">
+          <button
+            onClick={handleRetry}
+            className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-full hover:bg-yellow-200 transition"
+          >
+            <RotateCcw size={12} />
+            <span>Try again</span>
+          </button>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"

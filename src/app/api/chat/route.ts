@@ -33,8 +33,6 @@ export async function POST(req: NextRequest) {
     "anthropic/claude-opus-4.6",
     "anthropic/claude-opus-4.5",
   ];
-  const allowedForPro = ["*"]; // all models
-  const allowedForAdmin = ["*"];
 
   let isAllowed = false;
   if (userPlan === "admin" || userPlan === "pro") isAllowed = true;

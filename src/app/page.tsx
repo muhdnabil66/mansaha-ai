@@ -11,12 +11,12 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [planName, setPlanName] = useState<string>("Student");
 
   useEffect(() => {
     if (success === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowSuccessModal(true);
-      // Hapus query param dari URL tanpa reload
+      // Remove query param from URL without reload
       window.history.replaceState({}, "", "/");
     }
   }, [success]);
@@ -30,7 +30,7 @@ function HomeContent() {
       <PaymentSuccessModal
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
-        planName={planName}
+        planName="Student"
       />
     </ChatProvider>
   );

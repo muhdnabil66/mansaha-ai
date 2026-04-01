@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Check } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Check, Shield, Zap, CreditCard } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
-import { useChat } from "@/context/ChatContext";
 
 interface Plan {
   name: string;
@@ -67,17 +66,29 @@ interface PlanSelectorProps {
 export default function PlanSelector({ onClose, open }: PlanSelectorProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const { isSignedIn, user } = useUser();
-  const { requestUpgrade } = useChat();
   const [showEligibilityModal, setShowEligibilityModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleOpen = () => {
-      // already open via prop
-    };
+    const handleOpen = () => {};
     window.addEventListener("openPlanSelector", handleOpen);
     return () => window.removeEventListener("openPlanSelector", handleOpen);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, onClose]);
 
   const handleCheckout = async (planName: string) => {
     if (planName === "Student") {
@@ -87,7 +98,6 @@ export default function PlanSelector({ onClose, open }: PlanSelectorProps) {
       }
       const email = user?.emailAddresses[0]?.emailAddress;
       if (!email || !email.endsWith("@student.uitm.edu.my")) {
-        setSelectedPlan(planName);
         setShowEligibilityModal(true);
         return;
       }
@@ -113,7 +123,10 @@ export default function PlanSelector({ onClose, open }: PlanSelectorProps) {
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 overflow-y-auto">
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8">
+        <div
+          ref={modalRef}
+          className="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8"
+        >
           <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between rounded-t-2xl">
             <h2 className="text-xl font-semibold">Choose your plan</h2>
             <button
@@ -127,7 +140,11 @@ export default function PlanSelector({ onClose, open }: PlanSelectorProps) {
             {plans.map((plan) => (
               <div
                 key={plan.name}
-                className={`border rounded-xl p-6 flex flex-col ${plan.popular ? "border-black shadow-lg relative" : "border-gray-200"}`}
+                className={`border rounded-xl p-6 flex flex-col ${
+                  plan.popular
+                    ? "border-black shadow-lg relative"
+                    : "border-gray-200"
+                }`}
               >
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-3 py-1 rounded-full">
@@ -181,13 +198,32 @@ export default function PlanSelector({ onClose, open }: PlanSelectorProps) {
               </div>
             ))}
           </div>
+          <div className="border-t border-gray-200 p-4 flex flex-wrap justify-center gap-6 text-xs text-gray-500">
+            <div className="flex items-center gap-1">
+              <Shield size={14} />
+              <span>Secure Payment</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Zap size={14} />
+              <span>Instant Delivery</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <CreditCard size={14} />
+              <span>No Subscription</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Eligibility Modal */}
       {showEligibilityModal && (
-        <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div
+          className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 border-b border-gray-200">
               <h3 className="font-medium">Student Plan Eligibility</h3>
             </div>

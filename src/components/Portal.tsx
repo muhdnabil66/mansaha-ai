@@ -16,7 +16,6 @@ export default function Portal({ children }: PortalProps) {
     document.body.appendChild(el);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setElement(el);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
 
     return () => {

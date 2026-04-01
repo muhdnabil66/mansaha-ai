@@ -39,11 +39,8 @@ export default function Sidebar() {
     closeSidebar,
     setCurrentView,
     userPlan,
-    chatCount,
-    chatLimitMessage,
-    requestUpgrade,
-    username,
     updateUsername,
+    username,
   } = useChat();
 
   const { user, isSignedIn } = useUser();
@@ -63,11 +60,20 @@ export default function Sidebar() {
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
+  const hasReloadedRef = useRef(false);
 
   const showSearchModal = searchQuery.trim().length > 0;
   const filteredConversations = conversations.filter((conv) =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  // Fix: refresh only once after logout
+  useEffect(() => {
+    if (isSignedIn === false && !hasReloadedRef.current) {
+      hasReloadedRef.current = true;
+      window.location.reload();
+    }
+  }, [isSignedIn]);
 
   // Mobile: close sidebar when clicking outside
   useEffect(() => {
@@ -158,6 +164,9 @@ export default function Sidebar() {
     await updateUsername(newUsername);
     setShowSettings(false);
   };
+
+  const displayPlan =
+    userPlan === "guest" ? "Free" : userPlan === "free" ? "Free" : userPlan;
 
   return (
     <>
@@ -290,13 +299,6 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Guest limit message */}
-        {chatLimitMessage && (
-          <div className="px-4 py-2 text-xs text-red-600 bg-red-50 border-t border-red-100">
-            {chatLimitMessage}
-          </div>
-        )}
-
         <div className="p-4 border-t border-gray-200">
           <div className="relative">
             <button
@@ -313,7 +315,7 @@ export default function Sidebar() {
                     : "Guest"}
                 </div>
                 <div className="text-xs text-gray-500 capitalize">
-                  {userPlan}
+                  {displayPlan}
                 </div>
               </div>
             </button>

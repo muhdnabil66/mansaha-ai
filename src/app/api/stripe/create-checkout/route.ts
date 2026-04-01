@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
   if (!planData)
     return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
-  // Get user's email from Supabase
   const { data: userData } = await supabase
     .from("users")
     .select("email, stripe_customer_id")
@@ -38,6 +37,10 @@ export async function POST(req: NextRequest) {
       .eq("clerk_id", userId);
   }
 
+  const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_BASE_URL;
+  const successUrl = `${origin}/dashboard?success=true`;
+  const cancelUrl = `${origin}/pricing?canceled=true`;
+
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     payment_method_types: ["card"],
@@ -48,8 +51,8 @@ export async function POST(req: NextRequest) {
       },
     ],
     mode: "subscription",
-    success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard?success=true`,
-    cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/pricing?canceled=true`,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
   });
 
   return NextResponse.json({ url: session.url });

@@ -6,6 +6,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +23,7 @@ interface ChatContextType {
   currentConversationId: string | null;
   messages: Message[];
   loading: boolean;
+  isStreaming: boolean;
   error: string | null;
   selectedModel: string;
   isSidebarOpen: boolean;
@@ -32,6 +34,8 @@ interface ChatContextType {
   removeAttachment: (index: number) => void;
   clearAttachments: () => void;
   sendMessage: (content: string) => Promise<void>;
+  stopGeneration: () => void;
+  retryLastMessage: () => Promise<void>;
   createNewChat: () => Promise<void>;
   switchConversation: (id: string) => void;
   renameConversation: (id: string, newTitle: string) => Promise<void>;
@@ -48,7 +52,7 @@ interface ChatContextType {
   userPlan: string | null;
   chatCount: number;
   chatLimitMessage: string | null;
-  requestUpgrade: (plan: string) => void;
+  requestUpgrade: () => void;
   username: string;
   updateUsername: (newUsername: string) => Promise<void>;
 }
@@ -131,6 +135,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   >(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>(
     "qwen/qwen3.6-plus-preview:free",
@@ -142,10 +147,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [chatLimitMessage, setChatLimitMessage] = useState<string | null>(null);
   const [username, setUsername] = useState<string>("");
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastUserMessageRef = useRef<string | null>(null);
+
   const toggleSidebar = () => setIsSidebarOpen((prev) => !prev);
   const closeSidebar = () => setIsSidebarOpen(false);
 
-  // Helper untuk dapatkan user_id dan data pengguna dari Supabase
+  // Helper to get user_id from Supabase
   const getUserId = useCallback(async (): Promise<string | null> => {
     if (!isSignedIn) {
       const guestId = localStorage.getItem("guestId") || uuidv4();
@@ -172,7 +180,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return existing.id;
     }
 
-    // Create new user
     const email = user.emailAddresses[0]?.emailAddress;
     const defaultUsername = email?.split("@")[0] || "User";
     const { data: newUser, error: insertError } = await supabase
@@ -194,7 +201,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return newUser.id;
   }, [user, isSignedIn]);
 
-  // Load conversations (dengan reset apabila sign in/out)
+  // Load conversations
   useEffect(() => {
     if (!isLoaded) return;
     const load = async () => {
@@ -224,15 +231,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           setCurrentConversationId(null);
         }
       } else {
-        // Guest: muat dari localStorage
         const saved = localStorage.getItem("guest_conversations");
         if (saved) {
           const parsed = JSON.parse(saved);
-          const convs = parsed.map((c: any) => ({
-            ...c,
-            createdAt: new Date(c.createdAt),
-            messages: [],
-          }));
+          const convs = parsed.map(
+            (c: {
+              id: string;
+              title: string;
+              createdAt: string;
+              starred: boolean;
+            }) => ({
+              ...c,
+              createdAt: new Date(c.createdAt),
+              messages: [],
+            }),
+          );
           setConversations(convs);
           if (convs.length > 0 && !currentConversationId) {
             setCurrentConversationId(convs[0].id);
@@ -244,9 +257,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     };
     load();
-  }, [isLoaded, isSignedIn, getUserId]);
+  }, [isLoaded, isSignedIn, getUserId, currentConversationId]);
 
-  // Load messages untuk conversation semasa
+  // Load messages
   useEffect(() => {
     if (!currentConversationId) {
       setMessages([]);
@@ -279,10 +292,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         );
         if (saved) {
           const parsed = JSON.parse(saved);
-          const formatted = parsed.map((m: any) => ({
-            ...m,
-            timestamp: new Date(m.timestamp),
-          }));
+          const formatted = parsed.map(
+            (m: {
+              id: string;
+              role: string;
+              content: string;
+              timestamp: string;
+              liked?: boolean;
+              disliked?: boolean;
+              attachments?: string[];
+            }) => ({
+              ...m,
+              timestamp: new Date(m.timestamp),
+            }),
+          );
           setMessages(formatted);
         } else {
           setMessages([]);
@@ -292,7 +315,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     loadMessages();
   }, [currentConversationId, isSignedIn]);
 
-  // Simpan data guest ke localStorage
+  // Save guest conversations
   useEffect(() => {
     if (!isSignedIn && conversations.length) {
       localStorage.setItem(
@@ -311,7 +334,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [messages, currentConversationId, isSignedIn]);
 
-  // Fungsi untuk mengemas kini username
   const updateUsername = async (newUsername: string) => {
     if (!isSignedIn) {
       localStorage.setItem("guest_username", newUsername);
@@ -328,7 +350,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     else console.error("Error updating username", error);
   };
 
-  // Attachment helpers
   const addAttachment = (file: File) => {
     const preview = file.type.startsWith("image/")
       ? URL.createObjectURL(file)
@@ -353,20 +374,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setAttachments([]);
   };
 
-  // Cek had chat untuk user free dan guest
   const checkChatLimit = async (): Promise<{
     allowed: boolean;
     message?: string;
   }> => {
-    if (
-      userPlanState === "admin" ||
-      userPlanState === "student" ||
-      userPlanState === "pro"
-    ) {
+    // Admin has unlimited access
+    if (userPlanState === "admin") {
+      return { allowed: true };
+    }
+    if (userPlanState === "student" || userPlanState === "pro") {
       return { allowed: true };
     }
     if (!isSignedIn) {
-      // Guest
       const today = new Date().toDateString();
       const stored = localStorage.getItem("guest_chat_data");
       let data = { date: today, count: 0 };
@@ -383,7 +402,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
       return { allowed: true };
     } else {
-      // Signed-in free user
       const userId = await getUserId();
       if (!userId) return { allowed: false, message: "User not found" };
       const { data: userData, error } = await supabase
@@ -393,7 +411,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         .single();
       if (error) {
         console.error("Error fetching user limits", error);
-        return { allowed: true }; // fallback
+        return { allowed: true };
       }
       const now = new Date();
       let resetAt = userData.free_chat_reset_at
@@ -418,7 +436,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         });
         return {
           allowed: false,
-          message: `You are out of free messages until ${resetTime}. Upgrade to continue.`,
+          message: `You are out of free messages until ${resetTime}. Upgrade`,
         };
       }
       return { allowed: true };
@@ -457,7 +475,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Penjanaan title selepas respons AI
   const generateTitle = async (conversationId: string, userMessage: string) => {
     try {
       const response = await fetch("/api/generate-title", {
@@ -482,20 +499,40 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // sendMessage dengan had chat dan title
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setLoading(false);
+      setIsStreaming(false);
+    }
+  };
+
+  const retryLastMessage = async () => {
+    if (lastUserMessageRef.current) {
+      await sendMessage(lastUserMessageRef.current);
+    }
+  };
+
   const sendMessage = async (content: string) => {
     if ((!content.trim() && attachments.length === 0) || loading) return;
 
     const limit = await checkChatLimit();
     if (!limit.allowed) {
       setChatLimitMessage(limit.message!);
-      setTimeout(() => setChatLimitMessage(null), 5000);
+      // Mesej limit tidak akan hilang secara automatik, ia akan kekal sehingga user cuba hantar mesej baru
       return;
     }
 
+    lastUserMessageRef.current = content;
+
     setLoading(true);
+    setIsStreaming(true);
     setError(null);
     setChatLimitMessage(null);
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
     try {
       let convId = currentConversationId;
@@ -533,7 +570,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Upload attachments
       const uploadAttachments = async (): Promise<string[]> => {
         const urls: string[] = [];
         for (const att of attachments) {
@@ -555,14 +591,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const attachmentUrls = await uploadAttachments();
       clearAttachments();
 
-      // Simpan user message
       const userMessageObj: Omit<Message, "id"> = {
         role: "user",
         content,
         timestamp: new Date(),
         attachments: attachmentUrls,
       };
-      let savedUserMsg: any;
+      let savedUserMsg: { id: string };
       if (isSignedIn) {
         const { data, error: insertError } = await supabase
           .from("messages")
@@ -587,11 +622,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const newMessages = [...messages, userMessageWithId];
       setMessages(newMessages);
 
-      // Panggil AI
       const apiMessages = newMessages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
+
       const stream = await fetchStreamingResponse(apiMessages, selectedModel);
       let fullResponse = "";
       const assistantPlaceholderId = uuidv4();
@@ -606,6 +641,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setMessages((prev) => [...prev, placeholderMsg]);
 
       for await (const chunk of stream) {
+        if (abortController.signal.aborted) {
+          break;
+        }
         fullResponse += chunk;
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -616,7 +654,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      // Simpan assistant message
+      if (abortController.signal.aborted) {
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== assistantPlaceholderId),
+        );
+        setLoading(false);
+        setIsStreaming(false);
+        return;
+      }
+
       if (isSignedIn) {
         await supabase.from("messages").insert({
           conversation_id: convId,
@@ -624,7 +670,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           content: fullResponse,
           timestamp: new Date().toISOString(),
         });
-        // Refresh messages
         const { data: finalMessages } = await supabase
           .from("messages")
           .select("*")
@@ -654,23 +699,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      // Increment chat count (hanya untuk free/guest)
       await incrementChatCount();
 
-      // Generate title jika ini perbualan baru (hanya jika assistant message sudah ada)
       const currentConv = conversations.find((c) => c.id === convId);
-      if (currentConv && currentConv.title === "New Chat" && fullResponse) {
+      if (
+        currentConv &&
+        currentConv.title === "New Chat" &&
+        fullResponse &&
+        convId
+      ) {
         await generateTitle(convId, content);
       }
     } catch (err) {
-      console.error(err);
-      setError("Failed to send message");
+      if (err instanceof Error && err.name === "AbortError") {
+        // User cancelled
+      } else {
+        console.error(err);
+        setError("Failed to send message");
+      }
     } finally {
       setLoading(false);
+      setIsStreaming(false);
+      abortControllerRef.current = null;
     }
   };
 
-  // createNewChat, switchConversation, renameConversation, deleteConversation, toggleStarConversation, editMessage, redoMessage, deleteMessage, handleLike, handleDislike, copyToClipboard (sama seperti sebelumnya)
   const createNewChat = async () => {
     if (isSignedIn) {
       const userId = await getUserId();
@@ -779,6 +832,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setMessages(newMessages);
 
       setLoading(true);
+      setIsStreaming(true);
       const apiMessages = newMessages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -812,6 +866,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         timestamp: new Date().toISOString(),
       });
       setLoading(false);
+      setIsStreaming(false);
     } else {
       setError("Editing messages is limited to signed-in users");
     }
@@ -839,6 +894,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const truncated = messages.slice(0, userIndex + 1);
     setMessages(truncated);
     setLoading(true);
+    setIsStreaming(true);
     const apiMessages = truncated.map((m) => ({
       role: m.role,
       content: m.content,
@@ -872,6 +928,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       timestamp: new Date().toISOString(),
     });
     setLoading(false);
+    setIsStreaming(false);
   };
 
   const deleteMessage = async (index: number) => {
@@ -919,7 +976,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     navigator.clipboard.writeText(text);
   };
 
-  const requestUpgrade = (plan: string) => {
+  const requestUpgrade = () => {
     window.dispatchEvent(new CustomEvent("openPlanSelector"));
   };
 
@@ -932,6 +989,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         currentConversationId,
         messages,
         loading,
+        isStreaming,
         error,
         selectedModel,
         isSidebarOpen,
@@ -942,6 +1000,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         removeAttachment,
         clearAttachments,
         sendMessage,
+        stopGeneration,
+        retryLastMessage,
         createNewChat,
         switchConversation,
         renameConversation,

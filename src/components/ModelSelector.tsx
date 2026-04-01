@@ -5,7 +5,6 @@ import { useChat } from "@/context/ChatContext";
 import { useUser } from "@clerk/nextjs";
 import {
   ChevronDown,
-  Lock,
   Sparkles,
   Zap,
   Rocket,
@@ -90,14 +89,17 @@ export default function ModelSelector() {
   const { isSignedIn } = useUser();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [pendingModel, setPendingModel] = useState<
     (typeof allModels)[0] | null
   >(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [subMenuPosition, setSubMenuPosition] = useState({ top: 0, left: 0 });
+  const [subMenuOpen, setSubMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const subMenuRef = useRef<HTMLDivElement>(null);
 
   const canAccess = (model: (typeof allModels)[0]) => {
     if (model.requires === "guest") return true;
@@ -119,11 +121,11 @@ export default function ModelSelector() {
     if (canAccess(model)) {
       setSelectedModel(model.id);
       setOpen(false);
-      setMoreOpen(false);
+      setSubMenuOpen(false);
     } else {
       setPendingModel(model);
       setOpen(false);
-      setMoreOpen(false);
+      setSubMenuOpen(false);
       setShowUpgradeModal(true);
     }
   };
@@ -133,10 +135,67 @@ export default function ModelSelector() {
     if (!isSignedIn) {
       router.push("/sign-in");
     } else {
-      // Buka plan selector
       window.dispatchEvent(new CustomEvent("openPlanSelector"));
     }
   };
+
+  const updateMenuPosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const menuHeight = menuRef.current?.offsetHeight || 400;
+    let top = rect.bottom + 4;
+    if (spaceBelow < menuHeight) {
+      top = rect.top - menuHeight - 4;
+    }
+    // Align right edge of menu with right edge of button
+    let left = rect.right - 256;
+    // Ensure it doesn't go off-screen
+    if (left < 8) left = 8;
+    if (left + 256 > window.innerWidth - 8) left = window.innerWidth - 256 - 8;
+    setMenuPosition({ top, left });
+  };
+
+  const updateSubMenuPosition = () => {
+    if (!moreButtonRef.current) return;
+    const rect = moreButtonRef.current.getBoundingClientRect();
+    const subWidth = 256;
+    let left = rect.right + 4;
+    if (left + subWidth > window.innerWidth - 8) {
+      left = rect.left - subWidth - 4;
+    }
+    let top = rect.top;
+    const subHeight = subMenuRef.current?.offsetHeight || 400;
+    if (top + subHeight > window.innerHeight - 8) {
+      top = window.innerHeight - subHeight - 8;
+    }
+    if (top < 8) top = 8;
+    setSubMenuPosition({ top, left });
+  };
+
+  useEffect(() => {
+    if (open) {
+      updateMenuPosition();
+      window.addEventListener("resize", updateMenuPosition);
+      window.addEventListener("scroll", updateMenuPosition, true);
+    }
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (subMenuOpen) {
+      updateSubMenuPosition();
+      window.addEventListener("resize", updateSubMenuPosition);
+      window.addEventListener("scroll", updateSubMenuPosition, true);
+    }
+    return () => {
+      window.removeEventListener("resize", updateSubMenuPosition);
+      window.removeEventListener("scroll", updateSubMenuPosition, true);
+    };
+  }, [subMenuOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -147,14 +206,15 @@ export default function ModelSelector() {
         !buttonRef.current.contains(event.target as Node)
       ) {
         setOpen(false);
-        setMoreOpen(false);
+        setSubMenuOpen(false);
       }
       if (
-        moreMenuRef.current &&
-        !moreMenuRef.current.contains(event.target as Node) &&
-        !event.target.closest(".more-trigger")
+        subMenuRef.current &&
+        !subMenuRef.current.contains(event.target as Node) &&
+        moreButtonRef.current &&
+        !moreButtonRef.current.contains(event.target as Node)
       ) {
-        setMoreOpen(false);
+        setSubMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -181,17 +241,7 @@ export default function ModelSelector() {
             <div
               ref={menuRef}
               className="fixed bg-white border border-gray-200 rounded-lg shadow-lg w-64 z-[100]"
-              style={{
-                bottom: buttonRef.current
-                  ? window.innerHeight -
-                    buttonRef.current.getBoundingClientRect().top +
-                    4
-                  : "auto",
-                right: buttonRef.current
-                  ? window.innerWidth -
-                    buttonRef.current.getBoundingClientRect().right
-                  : "auto",
-              }}
+              style={{ top: menuPosition.top, left: menuPosition.left }}
             >
               {mainModels.map((model, idx) => (
                 <button
@@ -209,51 +259,65 @@ export default function ModelSelector() {
                     </div>
                   </div>
                   {!canAccess(model) && (
-                    <Lock size={12} className="text-gray-400" />
+                    <span className="text-xs text-yellow-600 font-medium">
+                      Upgrade
+                    </span>
                   )}
                 </button>
               ))}
               <div className="border-t border-gray-200 my-1" />
               <div className="relative">
                 <button
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-center gap-2 more-trigger"
-                  onClick={() => setMoreOpen(!moreOpen)}
+                  ref={moreButtonRef}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-center gap-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubMenuOpen(!subMenuOpen);
+                  }}
                 >
                   <MoreHorizontal size={14} />
                   <span className="text-sm">More models</span>
                   <ChevronDown size={12} className="ml-auto" />
                 </button>
-                {moreOpen && (
-                  <div
-                    ref={moreMenuRef}
-                    className="absolute top-0 right-full mr-1 bg-white border border-gray-200 rounded-lg shadow-lg w-64 z-[101]"
-                  >
-                    {otherModels.map((model, idx) => (
-                      <button
-                        key={idx}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-center justify-between"
-                        onClick={() => handleSelect(model)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <model.icon
-                            size={14}
-                            className="mt-0.5 text-gray-500"
-                          />
-                          <div>
-                            <div className="text-sm font-medium">
-                              {model.name}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {model.description}
+                {subMenuOpen && (
+                  <Portal>
+                    <div
+                      ref={subMenuRef}
+                      className="fixed bg-white border border-gray-200 rounded-lg shadow-lg w-64 z-[101]"
+                      style={{
+                        top: subMenuPosition.top,
+                        left: subMenuPosition.left,
+                      }}
+                    >
+                      {otherModels.map((model, idx) => (
+                        <button
+                          key={idx}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-center justify-between"
+                          onClick={() => handleSelect(model)}
+                        >
+                          <div className="flex items-start gap-2">
+                            <model.icon
+                              size={14}
+                              className="mt-0.5 text-gray-500"
+                            />
+                            <div>
+                              <div className="text-sm font-medium">
+                                {model.name}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {model.description}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        {!canAccess(model) && (
-                          <Lock size={12} className="text-gray-400" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                          {!canAccess(model) && (
+                            <span className="text-xs text-yellow-600 font-medium">
+                              Upgrade
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </Portal>
                 )}
               </div>
             </div>
