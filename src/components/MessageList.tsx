@@ -1,6 +1,6 @@
 "use client";
 
-import { Message } from "@/types/chat";
+import { Message } from "@/types";
 import ReactMarkdown from "react-markdown";
 import {
   Copy,
@@ -10,11 +10,14 @@ import {
   ThumbsUp,
   ThumbsDown,
   Trash2,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { useChat } from "@/context/ChatContext";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import ConfirmModal from "./ConfirmModal";
+import CodeSidebar from "./CodeSidebar";
 
 export default function MessageList({
   messages,
@@ -38,22 +41,14 @@ export default function MessageList({
     content: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [loadingPhase, setLoadingPhase] = useState<"thinking" | "wave">(
-    "thinking",
-  );
   const [deleteConfirm, setDeleteConfirm] = useState<{
     index: number;
     content: string;
   } | null>(null);
-
-  useEffect(() => {
-    if (loading) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoadingPhase("thinking");
-      const timer = setTimeout(() => setLoadingPhase("wave"), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [loading]);
+  const [selectedCode, setSelectedCode] = useState<{
+    code: string;
+    language: string;
+  } | null>(null);
 
   useEffect(() => {
     if (copiedIndex !== null) {
@@ -82,10 +77,6 @@ export default function MessageList({
     setEditValue("");
   };
 
-  const handleRedo = (index: number) => {
-    redoMessage(index);
-  };
-
   const handleDelete = (index: number) => {
     setDeleteConfirm({ index, content: messages[index].content });
   };
@@ -95,6 +86,62 @@ export default function MessageList({
       deleteMessage(deleteConfirm.index);
       setDeleteConfirm(null);
     }
+  };
+
+  const CodeBlock = ({
+    language,
+    value,
+  }: {
+    language: string;
+    value: string;
+  }) => {
+    const [showSidebar, setShowSidebar] = useState(false);
+    const handleView = () => {
+      setSelectedCode({ code: value, language });
+      setShowSidebar(true);
+    };
+    const handleDownload = () => {
+      const blob = new Blob([value], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `code.${language}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    return (
+      <div className="border border-gray-200 rounded-lg my-2 overflow-hidden">
+        <div className="flex items-center justify-between bg-gray-50 px-3 py-1 border-b border-gray-200">
+          <span className="text-xs font-mono">{language || "code"}</span>
+          <div className="flex gap-2">
+            <button
+              onClick={handleView}
+              className="text-gray-500 hover:text-black"
+              title="View"
+            >
+              <ExternalLink size={14} />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="text-gray-500 hover:text-black"
+              title="Download"
+            >
+              <Download size={14} />
+            </button>
+          </div>
+        </div>
+        <pre className="text-sm font-mono p-3 overflow-x-auto">
+          <code>{value}</code>
+        </pre>
+        {showSidebar && (
+          <CodeSidebar
+            code={value}
+            language={language}
+            onClose={() => setShowSidebar(false)}
+          />
+        )}
+      </div>
+    );
   };
 
   if (messages.length === 0) {
@@ -118,126 +165,143 @@ export default function MessageList({
   return (
     <>
       <div className="space-y-6">
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div className="max-w-[85%] md:max-w-[75%]">
-              <div
-                className={`rounded-2xl px-4 py-3 text-sm ${
-                  msg.role === "user"
-                    ? "bg-gray-100"
-                    : "bg-gray-50 border border-gray-100"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-medium opacity-70">
-                    {msg.role === "user" ? "You" : "Mansaha"}
-                  </span>
-                  <span className="text-[10px] opacity-50">
-                    {msg.timestamp.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-
-                {msg.role === "user" ? (
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                ) : (
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+        {messages.map((msg, idx) => {
+          // Skip rendering placeholder messages that are still loading and have empty content
+          if (
+            loading &&
+            msg.role === "assistant" &&
+            msg.content === "" &&
+            idx === messages.length - 1
+          ) {
+            return null;
+          }
+          return (
+            <div
+              key={idx}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div className="max-w-[85%] md:max-w-[75%]">
+                <div
+                  className={`rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-gray-100" : "bg-gray-50 border border-gray-100"}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium opacity-70">
+                      {msg.role === "user" ? "You" : "Mansaha"}
+                    </span>
+                    <span className="text-[10px] opacity-50">
+                      {new Date(msg.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
                   </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 mt-1 justify-end">
-                <button
-                  onClick={() => handleCopyWithFeedback(msg.content, idx)}
-                  className="p-1 rounded-md hover:bg-gray-100 transition"
-                  title="Copy"
-                >
-                  {copiedIndex === idx ? (
-                    <Check size={14} className="text-green-500" />
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
                   ) : (
-                    <Copy size={14} />
+                    <div className="prose prose-sm max-w-none">
+                      <ReactMarkdown
+                        components={{
+                          code({
+                            node,
+                            inline,
+                            className,
+                            children,
+                            ...props
+                          }) {
+                            const match = /language-(\w+)/.exec(
+                              className || "",
+                            );
+                            return !inline && match ? (
+                              <CodeBlock
+                                language={match[1]}
+                                value={String(children).replace(/\n$/, "")}
+                              />
+                            ) : (
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            );
+                          },
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
                   )}
-                </button>
-
-                {msg.role === "user" && (
+                </div>
+                <div className="flex items-center gap-1 mt-1 justify-end">
                   <button
-                    onClick={() => openEditModal(idx, msg.content)}
+                    onClick={() => handleCopyWithFeedback(msg.content, idx)}
                     className="p-1 rounded-md hover:bg-gray-100 transition"
-                    title="Edit"
+                    title="Copy"
                   >
-                    <Edit2 size={14} />
+                    {copiedIndex === idx ? (
+                      <Check size={14} className="text-green-500" />
+                    ) : (
+                      <Copy size={14} />
+                    )}
                   </button>
-                )}
-
-                {msg.role === "assistant" && (
+                  {msg.role === "user" && (
+                    <button
+                      onClick={() => openEditModal(idx, msg.content)}
+                      className="p-1 rounded-md hover:bg-gray-100 transition"
+                      title="Edit"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  )}
+                  {msg.role === "assistant" && (
+                    <button
+                      onClick={() => redoMessage(idx)}
+                      className="p-1 rounded-md hover:bg-gray-100 transition"
+                      title="Regenerate"
+                    >
+                      <Repeat size={14} />
+                    </button>
+                  )}
+                  {msg.role === "assistant" && (
+                    <>
+                      <button
+                        onClick={() => handleLike(idx)}
+                        className={`p-1 rounded-md transition ${msg.liked ? "text-green-500" : "hover:bg-gray-100"}`}
+                        title="Like"
+                      >
+                        <ThumbsUp size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDislike(idx)}
+                        className={`p-1 rounded-md transition ${msg.disliked ? "text-red-500" : "hover:bg-gray-100"}`}
+                        title="Dislike"
+                      >
+                        <ThumbsDown size={14} />
+                      </button>
+                    </>
+                  )}
                   <button
-                    onClick={() => handleRedo(idx)}
-                    className="p-1 rounded-md hover:bg-gray-100 transition"
-                    title="Regenerate"
+                    onClick={() => handleDelete(idx)}
+                    className="p-1 rounded-md hover:bg-gray-100 transition text-red-500"
+                    title="Delete"
                   >
-                    <Repeat size={14} />
+                    <Trash2 size={14} />
                   </button>
-                )}
-
-                {msg.role === "assistant" && (
-                  <>
-                    <button
-                      onClick={() => handleLike(idx)}
-                      className={`p-1 rounded-md transition ${msg.liked ? "text-green-500" : "hover:bg-gray-100"}`}
-                      title="Like"
-                    >
-                      <ThumbsUp size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleDislike(idx)}
-                      className={`p-1 rounded-md transition ${msg.disliked ? "text-red-500" : "hover:bg-gray-100"}`}
-                      title="Dislike"
-                    >
-                      <ThumbsDown size={14} />
-                    </button>
-                  </>
-                )}
-
-                <button
-                  onClick={() => handleDelete(idx)}
-                  className="p-1 rounded-md hover:bg-gray-100 transition text-red-500"
-                  title="Delete"
-                >
-                  <Trash2 size={14} />
-                </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-gray-50 rounded-2xl px-4 py-3">
-              {loadingPhase === "thinking" ? (
-                <div className="flex items-center gap-3">
-                  <div className="relative w-5 h-5 animate-spin">
-                    <Image
-                      src="/mansaha.png"
-                      alt="Thinking"
-                      fill
-                      className="object-contain"
-                    />
-                  </div>
-                  <span className="text-sm text-gray-500">Thinking...</span>
-                </div>
-              ) : (
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0s]"></div>
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
-                </div>
-              )}
+            <div className="bg-gray-50 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <div className="relative w-5 h-5 animate-spin">
+                <Image
+                  src="/mansaha.png"
+                  alt="Thinking"
+                  fill
+                  className="object-contain"
+                />
+              </div>
+              <span className="text-sm text-gray-500">Thinking...</span>
             </div>
           </div>
         )}
@@ -277,7 +341,6 @@ export default function MessageList({
         </div>
       )}
 
-      {/* Delete Confirmation Modal for messages */}
       <ConfirmModal
         isOpen={!!deleteConfirm}
         title="Delete message"
@@ -285,6 +348,14 @@ export default function MessageList({
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm(null)}
       />
+
+      {selectedCode && (
+        <CodeSidebar
+          code={selectedCode.code}
+          language={selectedCode.language}
+          onClose={() => setSelectedCode(null)}
+        />
+      )}
     </>
   );
 }

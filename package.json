@@ -9,11 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.0.8",
+    "@supabase/supabase-js": "^2.101.1",
     "lucide-react": "^0.577.0",
     "next": "^15.5.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "stripe": "^21.0.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",

@@ -1,7 +1,6 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useState, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MoreVertical, Star, Edit2, Trash2 } from "lucide-react";
 import Portal from "./Portal";
 
@@ -19,49 +18,45 @@ export default function KebabMenu({
   isStarred,
 }: KebabMenuProps) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const updatePosition = useCallback(() => {
+  const updatePosition = () => {
     if (!buttonRef.current || !menuRef.current) return;
     const buttonRect = buttonRef.current.getBoundingClientRect();
     const menuRect = menuRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - buttonRect.bottom;
     const spaceAbove = buttonRect.top;
-    let top: number;
+    let top = buttonRect.bottom + 4;
     if (spaceBelow < menuRect.height && spaceAbove > menuRect.height) {
       top = buttonRect.top - menuRect.height - 4;
-    } else {
-      top = buttonRect.bottom + 4;
     }
     let left = buttonRect.right - menuRect.width;
     if (left < 8) left = 8;
     if (left + menuRect.width > window.innerWidth - 8)
       left = window.innerWidth - menuRect.width - 8;
     setPosition({ top, left });
-  }, []);
+  };
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (open) {
       requestAnimationFrame(() => {
         updatePosition();
         window.addEventListener("scroll", updatePosition, true);
         window.addEventListener("resize", updatePosition);
-        return () => {
-          window.removeEventListener("scroll", updatePosition, true);
-          window.removeEventListener("resize", updatePosition);
-        };
       });
     } else {
-      setPosition(null);
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
     }
-  }, [open, updatePosition]);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         buttonRef.current &&
@@ -90,7 +85,7 @@ export default function KebabMenu({
       >
         <MoreVertical size={14} />
       </button>
-      {open && position && (
+      {open && (
         <Portal>
           <div
             ref={menuRef}

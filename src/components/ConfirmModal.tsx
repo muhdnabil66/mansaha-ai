@@ -6,22 +6,16 @@ interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
   message: string;
-  confirmText?: string;
-  cancelText?: string;
   onConfirm: () => void;
   onCancel: () => void;
-  isDestructive?: boolean;
 }
 
 export default function ConfirmModal({
   isOpen,
   title,
   message,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
   onConfirm,
   onCancel,
-  isDestructive = false,
 }: ConfirmModalProps) {
   if (!isOpen) return null;
 
@@ -45,17 +39,13 @@ export default function ConfirmModal({
             onClick={onCancel}
             className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg transition"
           >
-            {cancelText}
+            Cancel
           </button>
           <button
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm rounded-lg transition ${
-              isDestructive
-                ? "bg-red-600 text-white hover:bg-red-700"
-                : "bg-black text-white hover:bg-gray-800"
-            }`}
+            className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
           >
-            {confirmText}
+            Delete
           </button>
         </div>
       </div>
